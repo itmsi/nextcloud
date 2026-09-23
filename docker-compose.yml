@@ -1,0 +1,110 @@
+version: "3.8"
+
+services:
+  db:
+    image: mariadb:11.4
+    container_name: nextcloud_db
+    restart: unless-stopped
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+    volumes:
+      - nextcloud_db:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    networks:
+      - internal
+    # Tidak ada "ports:" -> database tidak diekspos ke host / luar.
+
+  redis:
+    image: redis:7-alpine
+    container_name: nextcloud_redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    networks:
+      - internal
+    # Tidak ada "ports:" -> redis hanya bisa diakses dari container lain di network internal.
+
+  app:
+    image: nextcloud:apache
+    container_name: nextcloud_app
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - nextcloud_html:/var/www/html
+      - nextcloud_data:/var/www/html/data
+      - nextcloud_config:/var/www/html/config
+      - nextcloud_custom_apps:/var/www/html/custom_apps
+      - ./config/php-uploads.ini:/usr/local/etc/php/conf.d/zz-nextcloud-uploads.ini:ro
+    environment:
+      MYSQL_HOST: db
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_HOST_PASSWORD: ${REDIS_PASSWORD}
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
+      NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_TRUSTED_DOMAINS}
+      OVERWRITEPROTOCOL: https
+      OVERWRITECLIURL: https://${NEXTCLOUD_TRUSTED_DOMAINS}
+      OVERWRITEHOST: ${NEXTCLOUD_TRUSTED_DOMAINS}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES}
+      APACHE_DISABLE_REWRITE_IP: 1
+      PHP_MEMORY_LIMIT: ${PHP_MEMORY_LIMIT}
+      PHP_UPLOAD_LIMIT: ${PHP_UPLOAD_LIMIT}
+    networks:
+      - internal
+      - proxy
+    # Tidak bind port 80/443 ke host: request masuk lewat reverse proxy global
+    # yang sudah berjalan di server, melalui network eksternal "proxy".
+
+  cron:
+    image: nextcloud:apache
+    container_name: nextcloud_cron
+    restart: unless-stopped
+    entrypoint: /bin/sh -c
+    command: >
+      "while true; do
+        su -s /bin/sh www-data -c 'php -f /var/www/html/cron.php';
+        sleep 300;
+      done"
+    depends_on:
+      - db
+      - redis
+      - app
+    volumes:
+      - nextcloud_html:/var/www/html
+      - nextcloud_data:/var/www/html/data
+      - nextcloud_config:/var/www/html/config
+      - nextcloud_custom_apps:/var/www/html/custom_apps
+      - ./config/php-uploads.ini:/usr/local/etc/php/conf.d/zz-nextcloud-uploads.ini:ro
+    environment:
+      MYSQL_HOST: db
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_HOST_PASSWORD: ${REDIS_PASSWORD}
+    networks:
+      - internal
+    # image nextcloud:apache sudah menyediakan /cron.sh yang menjalankan
+    # cron.php setiap 5 menit (background jobs, bukan AJAX).
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK_NAME}
+
+volumes:
+  nextcloud_db:
+  nextcloud_html:
+  nextcloud_data:
+  nextcloud_config:
+  nextcloud_custom_apps:
