@@ -56,11 +56,17 @@ services:
       APACHE_DISABLE_REWRITE_IP: 1
       PHP_MEMORY_LIMIT: ${PHP_MEMORY_LIMIT}
       PHP_UPLOAD_LIMIT: ${PHP_UPLOAD_LIMIT}
+    ports:
+      - "127.0.0.1:8080:80"
     networks:
       - internal
       - proxy
-    # Tidak bind port 80/443 ke host: request masuk lewat reverse proxy global
-    # yang sudah berjalan di server, melalui network eksternal "proxy".
+    # Reverse proxy global di server ini adalah nginx NATIVE di host (bukan
+    # container), jadi tidak bisa resolve nama service Docker "app" via
+    # network "proxy". Sebagai gantinya, port 80 container di-publish HANYA
+    # ke 127.0.0.1:8080 di host (tidak ke semua interface), lalu nginx host
+    # proxy_pass ke 127.0.0.1:8080. Network "proxy" tetap dipertahankan
+    # untuk kompatibilitas kalau nanti reverse proxy dipindah jadi container.
 
   cron:
     image: nextcloud:apache

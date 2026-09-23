@@ -42,10 +42,19 @@ dijangkau oleh reverse proxy global.
 
 Ada 2 skenario, pilih salah satu di `nginx/cloud.motorsights.com.conf`:
 
-- **Reverse proxy nginx biasa (manual vhost)** — gunakan file
-  `nginx/cloud.motorsights.com.conf` apa adanya, sesuaikan path
-  `ssl_certificate`/`ssl_certificate_key` dengan lokasi sertifikat Let's
-  Encrypt yang sudah dikelola reverse proxy global tsb, lalu reload nginx-nya.
+- **Reverse proxy nginx native di host** (misal via `/etc/nginx/sites-available`,
+  bukan container) — nginx host tidak bisa resolve nama service Docker
+  `app` lewat DNS Docker. Karena itu `docker-compose.yml` sudah men-publish
+  service `app` ke `127.0.0.1:8080` (lihat `ports:` pada service `app`), dan
+  `nginx/cloud.motorsights.com.conf` sudah diarahkan ke `http://127.0.0.1:8080`
+  (bukan `http://app:80`). Tinggal sesuaikan path
+  `ssl_certificate`/`ssl_certificate_key` dengan sertifikat Let's Encrypt
+  yang sudah dikelola nginx host tsb, lalu `sudo nginx -t && sudo systemctl reload nginx`.
+- **Reverse proxy nginx sebagai container** yang join ke network eksternal
+  yang sama (`PROXY_NETWORK_NAME`) — bisa pakai DNS Docker langsung: ganti
+  `proxy_pass` di file nginx conf jadi `http://app:80`, dan baris `ports:`
+  pada service `app` di `docker-compose.yml` boleh dihapus (tidak perlu
+  publish ke host lagi).
 - **jwilder/nginx-proxy + acme-companion (otomatis via env var)** — tidak
   perlu file vhost manual. Tambahkan environment `VIRTUAL_HOST`,
   `VIRTUAL_PORT=80`, `LETSENCRYPT_HOST`, `LETSENCRYPT_EMAIL` ke service
